@@ -20,7 +20,7 @@ from qlib.utils import get_or_create_path
 from qlib.log import get_module_logger
 from qlib.model.base import Model
 
-device = "cuda" if torch.cuda.is_available() else "cpu"
+device = "cuda" if torch.cuda.is_available() else "mps" if torch.mps.is_available() else "cpu"
 
 
 class TRAModel(Model):

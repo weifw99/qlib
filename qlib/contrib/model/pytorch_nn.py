@@ -92,7 +92,7 @@ class DNNModelPytorch(Model):
         if isinstance(GPU, str):
             self.device = torch.device(GPU)
         else:
-            self.device = torch.device("cuda:%d" % (GPU) if torch.cuda.is_available() and GPU >= 0 else "cpu")
+            self.device = torch.device("cuda:%d" % (GPU) if torch.cuda.is_available() and GPU >= 0 else "mps" if torch.mps.is_available() else "cpu")
         self.seed = seed
         self.weight_decay = weight_decay
         self.data_parall = data_parall

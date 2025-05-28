@@ -73,7 +73,7 @@ class TCTS(Model):
         self.batch_size = batch_size
         self.early_stop = early_stop
         self.loss = loss
-        self.device = torch.device("cuda:%d" % (GPU) if torch.cuda.is_available() else "cpu")
+        self.device = torch.device("cuda:%d" % (GPU) if torch.cuda.is_available() and GPU >= 0 else "mps" if torch.mps.is_available() else "cpu")
         self.use_gpu = torch.cuda.is_available()
         self.seed = seed
         self.input_dim = input_dim
