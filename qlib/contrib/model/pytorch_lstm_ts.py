@@ -71,7 +71,7 @@ class LSTM(Model):
         self.early_stop = early_stop
         self.optimizer = optimizer.lower()
         self.loss = loss
-        self.device = torch.device("cuda:%d" % (GPU) if torch.cuda.is_available() and GPU >= 0 else "mps" if torch.mps.is_available() else "cpu")
+        self.device = torch.device("cuda:%d" % (GPU) if torch.cuda.is_available() and GPU >= 0 else "mps" if torch.backends.mps.is_available() else "cpu")
         self.n_jobs = n_jobs
         self.seed = seed
 
