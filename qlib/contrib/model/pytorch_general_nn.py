@@ -203,6 +203,11 @@ class GeneralPTNN(Model):
         self.dnn_model.train()
 
         for data, weight in data_loader:
+            if self.device == torch.device("mps"):
+                if data.dtype != torch.float32:
+                    data = data.float()
+                if weight.dtype != torch.float32:
+                    weight = weight.float()
             feature, label = self._get_fl(data)
 
             pred = self.dnn_model(feature.float())
@@ -220,6 +225,11 @@ class GeneralPTNN(Model):
         losses = []
 
         for data, weight in data_loader:
+            if self.device == torch.device("mps"):
+                if data.dtype != torch.float32:
+                    data = data.float()
+                if weight.dtype != torch.float32:
+                    weight = weight.float()
             feature, label = self._get_fl(data)
 
             with torch.no_grad():
@@ -356,6 +366,9 @@ class GeneralPTNN(Model):
         preds = []
 
         for data in test_loader:
+            if self.device == torch.device("mps"):
+                if data.dtype != torch.float32:
+                    data = data.float()
             feature, _ = self._get_fl(data)
             feature = feature.to(self.device)
 
