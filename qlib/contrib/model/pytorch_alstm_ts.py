@@ -171,6 +171,11 @@ class ALSTM(Model):
         self.ALSTM_model.train()
 
         for data, weight in data_loader:
+            if self.device == torch.device("mps"):
+                if data.dtype != torch.float32:
+                    data = data.float()
+                if weight.dtype != torch.float32:
+                    weight = weight.float()
             feature = data[:, :, 0:-1].to(self.device)
             label = data[:, -1, -1].to(self.device)
 
@@ -189,6 +194,11 @@ class ALSTM(Model):
         losses = []
 
         for data, weight in data_loader:
+            if self.device == torch.device("mps"):
+                if data.dtype != torch.float32:
+                    data = data.float()
+                if weight.dtype != torch.float32:
+                    weight = weight.float()
             feature = data[:, :, 0:-1].to(self.device)
             # feature[torch.isnan(feature)] = 0
             label = data[:, -1, -1].to(self.device)
@@ -265,6 +275,16 @@ class ALSTM(Model):
             self.logger.info("train %.6f, valid %.6f" % (train_score, val_score))
             evals_result["train"].append(train_score)
             evals_result["valid"].append(val_score)
+            # ✅ 写入 logger（写入 MLflow）
+            from qlib.workflow import R
+            recorder = R.get_recorder()
+            if recorder is not None:
+                log_m = {"train_loss": train_loss,
+                         "val_loss": val_loss,
+                         "train_score": train_score,
+                         "val_score": val_score
+                         }
+                recorder.log_metrics(step=step, **log_m)
 
             if val_score > best_score:
                 best_score = val_score

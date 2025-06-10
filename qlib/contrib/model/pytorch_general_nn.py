@@ -315,7 +315,16 @@ class GeneralPTNN(Model):
             self.logger.info("Epoch%d: train %.6f, valid %.6f" % (step, train_score, val_score))
             evals_result["train"].append(train_score)
             evals_result["valid"].append(val_score)
-
+            # ✅ 写入 logger（写入 MLflow）
+            from qlib.workflow import R
+            recorder = R.get_recorder()
+            if recorder is not None:
+                log_m = {"train_loss": train_loss,
+                         "val_loss": val_loss,
+                         "train_score": train_score,
+                         "val_score": val_score
+                         }
+                recorder.log_metrics(step=step, **log_m)
             # current_lr = self.train_optimizer.param_groups[0]["lr"]
             # self.logger.info("Current learning rate: %.6e" % current_lr)
 
