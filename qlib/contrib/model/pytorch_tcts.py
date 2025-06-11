@@ -5,6 +5,8 @@
 from __future__ import division
 from __future__ import print_function
 
+from typing import Union, Text
+
 import numpy as np
 import pandas as pd
 import copy
@@ -348,11 +350,11 @@ class TCTS(Model):
 
         return best_loss
 
-    def predict(self, dataset):
+    def predict(self, dataset, segment: Union[Text, slice] = "test"):
         if not self.fitted:
             raise ValueError("model is not fitted yet!")
 
-        x_test = dataset.prepare("test", col_set="feature")
+        x_test = dataset.prepare(segment, col_set="feature")
         index = x_test.index
         self.fore_model.eval()
         x_values = x_test.values

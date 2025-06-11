@@ -350,9 +350,9 @@ class GeneralPTNN(Model):
         if self.use_gpu:
             torch.cuda.empty_cache()
 
-    def predict(
+
         self,
-        dataset: Union[DatasetH, TSDatasetH],
+        dataset: Union[DatasetH, TSDatasetH], segment: Union[Text, slice] = "test",
         batch_size=None,
         n_jobs=None,
     ):
