@@ -8,7 +8,7 @@ from torch.utils.data import DataLoader
 
 import numpy as np
 import pandas as pd
-from typing import Union
+from typing import Union, Text
 import copy
 
 import torch
@@ -350,7 +350,7 @@ class GeneralPTNN(Model):
         if self.use_gpu:
             torch.cuda.empty_cache()
 
-
+    def predict(
         self,
         dataset: Union[DatasetH, TSDatasetH], segment: Union[Text, slice] = "test",
         batch_size=None,
@@ -359,7 +359,7 @@ class GeneralPTNN(Model):
         if not self.fitted:
             raise ValueError("model is not fitted yet!")
 
-        dl_test = dataset.prepare("test", col_set=["feature", "label"], data_key=DataHandlerLP.DK_I)
+        dl_test = dataset.prepare(segment, col_set=["feature", "label"], data_key=DataHandlerLP.DK_I)
         self.logger.info(f"Test samples: {len(dl_test)}")
 
         if isinstance(dataset, TSDatasetH):
