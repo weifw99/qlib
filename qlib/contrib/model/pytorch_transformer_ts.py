@@ -65,6 +65,10 @@ class TransformerModel(Model):
         if self.seed is not None:
             np.random.seed(self.seed)
             torch.manual_seed(self.seed)
+            if torch.backends.mps.is_available():
+                torch.mps.manual_seed(self.seed)
+            if torch.cuda.is_available():
+                torch.cuda.manual_seed_all(self.seed)
 
         self.model = Transformer(d_feat, d_model, nhead, num_layers, dropout, self.device)
         if optimizer.lower() == "adam":

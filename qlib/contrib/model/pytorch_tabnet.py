@@ -85,6 +85,10 @@ class TabnetModel(Model):
         self.fitted = False
         np.random.seed(self.seed)
         torch.manual_seed(self.seed)
+        if torch.backends.mps.is_available():
+            torch.mps.manual_seed(seed)
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed_all(self.seed)
 
         self.tabnet_model = TabNet(inp_dim=self.d_feat, out_dim=self.out_dim, vbs=vbs, relax=relax).to(self.device)
         self.tabnet_decoder = TabNet_Decoder(self.out_dim, self.d_feat, n_shared, n_ind, vbs, n_steps).to(self.device)

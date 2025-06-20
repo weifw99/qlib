@@ -263,6 +263,10 @@ class TCTS(Model):
             if self.seed is not None:
                 np.random.seed(self.seed)
                 torch.manual_seed(self.seed)
+                if torch.backends.mps.is_available():
+                    torch.mps.manual_seed(self.seed)
+                if torch.cuda.is_available():
+                    torch.cuda.manual_seed_all(self.seed)
 
             best_loss = self.training(
                 x_train, y_train, x_valid, y_valid, x_test, y_test, verbose=verbose, save_path=save_path
