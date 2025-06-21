@@ -267,6 +267,8 @@ class TCTS(Model):
                     torch.mps.manual_seed(self.seed)
                 if torch.cuda.is_available():
                     torch.cuda.manual_seed_all(self.seed)
+                    torch.backends.cudnn.deterministic = True
+                    torch.backends.cudnn.benchmark = False
 
             best_loss = self.training(
                 x_train, y_train, x_valid, y_valid, x_test, y_test, verbose=verbose, save_path=save_path

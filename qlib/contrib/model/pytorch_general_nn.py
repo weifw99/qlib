@@ -10,6 +10,7 @@ import numpy as np
 import pandas as pd
 from typing import Union, Text
 import copy
+import os
 
 import torch
 import torch.optim as optim
@@ -63,12 +64,14 @@ class GeneralPTNN(Model):
         GPU=0,
         seed=None,
         pt_model_uri="qlib.contrib.model.pytorch_gru_ts.GRUModel",
-        pt_model_kwargs={
+        pt_model_kwargs = {
             "d_feat": 6,
             "hidden_size": 64,
             "num_layers": 2,
             "dropout": 0.0,
         },
+        init_model_path=None,
+        **kwargs,
     ):
         # Set logger.
         self.logger = get_module_logger("GeneralPTNN")
@@ -90,6 +93,15 @@ class GeneralPTNN(Model):
         self.pt_model_uri, self.pt_model_kwargs = pt_model_uri, pt_model_kwargs
         self.dnn_model = init_instance_by_config({"class": pt_model_uri, "kwargs": pt_model_kwargs})
 
+        self.kwargs = kwargs
+        self.init_model_path = init_model_path
+        if init_model_path is not None and os.path.exists(init_model_path):
+            self.logger.info(f"Loading model weights from {init_model_path}")
+            self.dnn_model.load_state_dict(torch.load(init_model_path, map_location=self.device))
+            self.fitted = True
+        else:
+            self.fitted = False
+
         self.logger.info(
             "GeneralPTNN parameters setting:"
             "\nn_epochs : {}"
@@ -105,7 +117,9 @@ class GeneralPTNN(Model):
             "\nweight_decay : {}"
             "\nseed : {}"
             "\npt_model_uri: {}"
-            "\npt_model_kwargs: {}".format(
+            "\npt_model_kwargs: {}"
+            "\ninit_model_path: {}"
+            "\nkwargs: {}".format(
                 n_epochs,
                 lr,
                 metric,
@@ -120,6 +134,8 @@ class GeneralPTNN(Model):
                 seed,
                 pt_model_uri,
                 pt_model_kwargs,
+                init_model_path,
+                kwargs,
             )
         )
 
@@ -130,7 +146,8 @@ class GeneralPTNN(Model):
                 torch.mps.manual_seed(self.seed)
             if torch.cuda.is_available():
                 torch.cuda.manual_seed_all(self.seed)
-                
+                torch.backends.cudnn.deterministic = True
+                torch.backends.cudnn.benchmark = False
 
         self.logger.info("model:\n{:}".format(self.dnn_model))
         self.logger.info("model size: {:.4f} MB".format(count_parameters(self.dnn_model)))
@@ -146,7 +163,6 @@ class GeneralPTNN(Model):
         self.lr_scheduler = ReduceLROnPlateau(
             self.train_optimizer, mode="min", factor=0.5, patience=5, min_lr=1e-6, threshold=1e-5
         )
-        self.fitted = False
         self.dnn_model.to(self.device)
 
     @property
@@ -254,6 +270,8 @@ class GeneralPTNN(Model):
         save_path=None,
         reweighter=None,
     ):
+        save_path = save_path or self.kwargs.get("save_path", None) if self.kwargs else None
+        self.logger.info("fit params save_path:%s:", save_path)
         ists = isinstance(dataset, TSDatasetH)  # is this time series dataset
 
         dl_train = dataset.prepare("train", col_set=["feature", "label"], data_key=DataHandlerLP.DK_L)
@@ -287,6 +305,7 @@ class GeneralPTNN(Model):
             shuffle=True,
             num_workers=self.n_jobs,
             drop_last=True,
+            generator = torch.Generator().manual_seed(self.seed) if self.seed is not None else None,
         )
         valid_loader = DataLoader(
             ConcatDataset(dl_valid, wl_valid),
@@ -297,7 +316,12 @@ class GeneralPTNN(Model):
         )
         del dl_train, dl_valid, wl_train, wl_valid
 
-        save_path = get_or_create_path(save_path)
+        save_path = get_or_create_path(save_path, return_dir=True)
+        model_save_dir = os.path.join(save_path, "model_ckpt")
+        os.makedirs(model_save_dir, exist_ok=True)
+        # 记录 artifact 到 MLflow
+        from qlib.workflow import R
+        recorder = R.get_recorder()
 
         stop_steps = 0
         train_loss = 0
@@ -321,8 +345,6 @@ class GeneralPTNN(Model):
             evals_result["train"].append(train_score)
             evals_result["valid"].append(val_score)
             # ✅ 写入 logger（写入 MLflow）
-            from qlib.workflow import R
-            recorder = R.get_recorder()
             if recorder is not None:
                 log_m = {"train_loss": train_loss,
                          "val_loss": val_loss,
@@ -334,6 +356,12 @@ class GeneralPTNN(Model):
             # self.logger.info("Current learning rate: %.6e" % current_lr)
 
             self.lr_scheduler.step(val_score)
+
+            # 每轮保存模型
+            step_model_path = os.path.join(model_save_dir, f"model_{step}_params.pt")
+            torch.save(self.dnn_model.state_dict(), step_model_path)
+            if recorder is not None:
+                recorder.log_artifact(step_model_path, artifact_path="models")
 
             if step == 0:
                 best_param = copy.deepcopy(self.dnn_model.state_dict())
@@ -350,7 +378,11 @@ class GeneralPTNN(Model):
 
         self.logger.info("best score: %.6lf @ %d epoch" % (best_score, best_epoch))
         self.dnn_model.load_state_dict(best_param)
-        torch.save(best_param, save_path)
+        # 保存最优模型
+        best_model_path = os.path.join(model_save_dir, f"base_model_params.pt")
+        torch.save(best_param, best_model_path)
+        if recorder is not None:
+            recorder.log_artifact(best_model_path, artifact_path="models")
 
         if self.use_gpu:
             torch.cuda.empty_cache()

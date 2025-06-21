@@ -5,6 +5,8 @@
 from __future__ import division
 from __future__ import print_function
 
+import os
+
 import numpy as np
 import pandas as pd
 from typing import Text, Union
@@ -120,6 +122,8 @@ class GATs(Model):
                 torch.mps.manual_seed(self.seed)
             if torch.cuda.is_available():
                 torch.cuda.manual_seed_all(self.seed)
+                torch.backends.cudnn.deterministic = True
+                torch.backends.cudnn.benchmark = False
 
         self.GAT_model = GATModel(
             d_feat=self.d_feat,

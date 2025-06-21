@@ -4,6 +4,7 @@
 from __future__ import division
 from __future__ import print_function
 import copy
+import os
 from typing import Text, Union
 
 import numpy as np
@@ -52,6 +53,7 @@ class GRU(Model):
         optimizer="adam",
         GPU=0,
         seed=None,
+        init_model_path=None,
         **kwargs,
     ):
         # Set logger.
@@ -113,6 +115,8 @@ class GRU(Model):
                 torch.mps.manual_seed(self.seed)
             if torch.cuda.is_available():
                 torch.cuda.manual_seed_all(self.seed)
+                torch.backends.cudnn.deterministic = True
+                torch.backends.cudnn.benchmark = False
 
         self.gru_model = GRUModel(
             d_feat=self.d_feat,
@@ -130,7 +134,14 @@ class GRU(Model):
         else:
             raise NotImplementedError("optimizer {} is not supported!".format(optimizer))
 
-        self.fitted = False
+        self.kwargs = kwargs
+        self.init_model_path = init_model_path
+        if init_model_path is not None and os.path.exists(init_model_path):
+            self.logger.info(f"Loading model weights from {init_model_path}")
+            self.gru_model.load_state_dict(torch.load(init_model_path, map_location=self.device))
+            self.fitted = True
+        else:
+            self.fitted = False
         self.gru_model.to(self.device)
 
     @property
@@ -216,6 +227,8 @@ class GRU(Model):
         evals_result=dict(),
         save_path=None,
     ):
+        save_path = save_path or self.kwargs.get("save_path", None) if self.kwargs else None
+        self.logger.info("fit params save_path:%s:", save_path)
         # prepare training and validation data
         dfs = {
             k: dataset.prepare(
@@ -242,7 +255,13 @@ class GRU(Model):
         else:
             x_valid, y_valid = None, None
 
-        save_path = get_or_create_path(save_path)
+        save_path = get_or_create_path(save_path, return_dir=True)
+        model_save_dir = os.path.join(save_path, "model_ckpt")
+        os.makedirs(model_save_dir, exist_ok=True)
+        # 记录 artifact 到 MLflow
+        from qlib.workflow import R
+        recorder = R.get_recorder()
+
         stop_steps = 0
         train_loss = 0
         best_score = -np.inf
@@ -263,6 +282,12 @@ class GRU(Model):
             train_loss, train_score = self.test_epoch(x_train, y_train)
             evals_result["train"].append(train_score)
 
+            # 每轮保存模型
+            step_model_path = os.path.join(model_save_dir, f"model_{step}_params.pt")
+            torch.save(self.gru_model.state_dict(), step_model_path)
+            if recorder is not None:
+                recorder.log_artifact(step_model_path, artifact_path="models")
+
             # evaluate on validation data if provided
             if x_valid is not None and y_valid is not None:
                 val_loss, val_score = self.test_epoch(x_valid, y_valid)
@@ -282,7 +307,11 @@ class GRU(Model):
 
         self.logger.info("best score: %.6lf @ %d" % (best_score, best_epoch))
         self.gru_model.load_state_dict(best_param)
-        torch.save(best_param, save_path)
+        # 保存最优模型
+        best_model_path = os.path.join(model_save_dir, f"base_model_params.pt")
+        torch.save(best_param, best_model_path)
+        if recorder is not None:
+            recorder.log_artifact(best_model_path, artifact_path="models")
 
         # Logging
         rec = R.get_recorder()

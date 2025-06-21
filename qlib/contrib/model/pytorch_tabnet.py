@@ -83,12 +83,15 @@ class TabnetModel(Model):
             "\npretrain: {}".format(self.batch_size, vbs, self.device, self.pretrain)
         )
         self.fitted = False
-        np.random.seed(self.seed)
-        torch.manual_seed(self.seed)
-        if torch.backends.mps.is_available():
-            torch.mps.manual_seed(seed)
-        if torch.cuda.is_available():
-            torch.cuda.manual_seed_all(self.seed)
+        if self.seed is not None:
+            np.random.seed(self.seed)
+            torch.manual_seed(self.seed)
+            if torch.backends.mps.is_available():
+                torch.mps.manual_seed(self.seed)
+            if torch.cuda.is_available():
+                torch.cuda.manual_seed_all(self.seed)
+                torch.backends.cudnn.deterministic = True
+                torch.backends.cudnn.benchmark = False
 
         self.tabnet_model = TabNet(inp_dim=self.d_feat, out_dim=self.out_dim, vbs=vbs, relax=relax).to(self.device)
         self.tabnet_decoder = TabNet_Decoder(self.out_dim, self.d_feat, n_shared, n_ind, vbs, n_steps).to(self.device)
@@ -178,6 +181,8 @@ class TabnetModel(Model):
         x_train, y_train = df_train["feature"], df_train["label"]
         x_valid, y_valid = df_valid["feature"], df_valid["label"]
         save_path = get_or_create_path(save_path)
+        from qlib.workflow import R
+        recorder = R.get_recorder()
 
         stop_steps = 0
         train_loss = 0
@@ -200,8 +205,6 @@ class TabnetModel(Model):
             evals_result["train"].append(train_score)
             evals_result["valid"].append(val_score)
             # ✅ 写入 logger（写入 MLflow）
-            from qlib.workflow import R
-            recorder = R.get_recorder()
             if recorder is not None:
                 log_m = {"train_loss": train_loss,
                          "val_loss": valid_loss,

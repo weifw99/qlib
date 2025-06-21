@@ -83,6 +83,8 @@ class TRAModel(Model):
         freeze_predictors=False,
         transport_method="none",
         memory_mode="sample",
+        init_model_path=None,
+        **kwargs,
     ):
         self.logger = get_module_logger("TRA")
 
@@ -95,10 +97,6 @@ class TRAModel(Model):
 
         if transport_method == "router" and not eval_train:
             self.logger.warning("`eval_train` will be ignored when using TRA.router")
-
-        if seed is not None:
-            np.random.seed(seed)
-            torch.manual_seed(seed)
 
         self.model_config = model_config
         self.tra_config = tra_config
@@ -123,6 +121,16 @@ class TRAModel(Model):
         self.transport_method = transport_method
         self.use_daily_transport = memory_mode == "daily"
         self.transport_fn = transport_daily if self.use_daily_transport else transport_sample
+
+        if self.seed is not None:
+            np.random.seed(self.seed)
+            torch.manual_seed(self.seed)
+            if torch.backends.mps.is_available():
+                torch.mps.manual_seed(self.seed)
+            if torch.cuda.is_available():
+                torch.cuda.manual_seed_all(self.seed)
+                torch.backends.cudnn.deterministic = True
+                torch.backends.cudnn.benchmark = False
 
         self._writer = None
         if self.logdir is not None:

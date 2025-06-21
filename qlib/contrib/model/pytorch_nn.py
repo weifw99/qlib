@@ -126,6 +126,8 @@ class DNNModelPytorch(Model):
                 torch.mps.manual_seed(self.seed)
             if torch.cuda.is_available():
                 torch.cuda.manual_seed_all(self.seed)
+                torch.backends.cudnn.deterministic = True
+                torch.backends.cudnn.benchmark = False
 
         if loss not in {"mse", "binary"}:
             raise NotImplementedError("loss {} is not supported!".format(loss))
@@ -133,9 +135,6 @@ class DNNModelPytorch(Model):
 
         if init_model is None:
             self.dnn_model = init_instance_by_config({"class": pt_model_uri, "kwargs": pt_model_kwargs})
-
-            if self.data_parall:
-                self.dnn_model = DataParallel(self.dnn_model).to(self.device)
         else:
             self.dnn_model = init_model
 
@@ -183,7 +182,6 @@ class DNNModelPytorch(Model):
         else:
             self.scheduler = scheduler(optimizer=self.train_optimizer)
 
-        self.fitted = False
         self.dnn_model.to(self.device)
 
     @property

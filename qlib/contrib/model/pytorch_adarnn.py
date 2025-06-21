@@ -56,7 +56,8 @@ class ADARNN(Model):
         n_splits=2,
         GPU=0,
         seed=None,
-        **_,
+        init_model_path=None,
+        **kwargs,
     ):
         # Set logger.
         self.logger = get_module_logger("ADARNN")
@@ -99,7 +100,9 @@ class ADARNN(Model):
             "\nloss_type : {}"
             "\nvisible_GPU : {}"
             "\nuse_GPU : {}"
-            "\nseed : {}".format(
+            "\nseed : {}"
+            "\ninit_model_path: {}"
+            "\nkwargs: {}".format(
                 d_feat,
                 hidden_size,
                 num_layers,
@@ -114,6 +117,8 @@ class ADARNN(Model):
                 GPU,
                 self.use_gpu,
                 seed,
+                init_model_path,
+                kwargs,
             )
         )
 
@@ -124,6 +129,8 @@ class ADARNN(Model):
                 torch.mps.manual_seed(self.seed)
             if torch.cuda.is_available():
                 torch.cuda.manual_seed_all(self.seed)
+                torch.backends.cudnn.deterministic = True
+                torch.backends.cudnn.benchmark = False
 
         n_hiddens = [hidden_size for _ in range(num_layers)]
         self.model = AdaRNN(
@@ -140,6 +147,15 @@ class ADARNN(Model):
         self.logger.info("model:\n{:}".format(self.model))
         self.logger.info("model size: {:.4f} MB".format(count_parameters(self.model)))
 
+        self.kwargs = kwargs
+        self.init_model_path = init_model_path
+        if init_model_path is not None and os.path.exists(init_model_path):
+            self.logger.info(f"Loading model weights from {init_model_path}")
+            self.model.load_state_dict(torch.load(init_model_path, map_location=self.device))
+            self.fitted = True
+        else:
+            self.fitted = False
+
         if optimizer.lower() == "adam":
             self.train_optimizer = optim.Adam(self.model.parameters(), lr=self.lr)
         elif optimizer.lower() == "gd":
@@ -147,7 +163,6 @@ class ADARNN(Model):
         else:
             raise NotImplementedError("optimizer {} is not supported!".format(optimizer))
 
-        self.fitted = False
         self.model.to(self.device)
 
     @property
@@ -249,6 +264,8 @@ class ADARNN(Model):
         evals_result=dict(),
         save_path=None,
     ):
+        save_path = save_path or self.kwargs.get("save_path", None) if self.kwargs else None
+        self.logger.info("fit params save_path:%s:", save_path)
         df_train, df_valid = dataset.prepare(
             ["train", "valid"],
             col_set=["feature", "label"],
@@ -258,9 +275,15 @@ class ADARNN(Model):
         days = df_train.index.get_level_values(level=0).unique()
         train_splits = np.array_split(days, self.n_splits)
         train_splits = [df_train[s[0] : s[-1]] for s in train_splits]
-        train_loader_list = [get_stock_loader(df, self.batch_size) for df in train_splits]
+        train_loader_list = [get_stock_loader(df, self.batch_size, generator = torch.Generator().manual_seed(self.seed) if self.seed is not None else None) for df in train_splits]
 
-        save_path = get_or_create_path(save_path)
+        save_path = get_or_create_path(save_path, return_dir=True)
+        model_save_dir = os.path.join(save_path, "model_ckpt")
+        os.makedirs(model_save_dir, exist_ok=True)
+        # 记录 artifact 到 MLflow
+        from qlib.workflow import R
+        recorder = R.get_recorder()
+
         stop_steps = 0
         evals_result["train"] = []
         evals_result["valid"] = []
@@ -286,6 +309,14 @@ class ADARNN(Model):
             train_score = train_metrics[self.metric]
             evals_result["train"].append(train_score)
             evals_result["valid"].append(valid_score)
+
+            # 每轮保存模型
+            step_model_path = os.path.join(model_save_dir, f"model_{step}_params.pt")
+            torch.save(self.dnn_model.state_dict(), step_model_path)
+            if recorder is not None:
+                recorder.log_artifact(step_model_path, artifact_path="models")
+
+
             if valid_score > best_score:
                 best_score = valid_score
                 stop_steps = 0
@@ -299,7 +330,11 @@ class ADARNN(Model):
 
         self.logger.info("best score: %.6lf @ %d" % (best_score, best_epoch))
         self.model.load_state_dict(best_param)
-        torch.save(best_param, save_path)
+        # 保存最优模型
+        best_model_path = os.path.join(model_save_dir, f"base_model_params.pt")
+        torch.save(best_param, best_model_path)
+        if recorder is not None:
+            recorder.log_artifact(best_model_path, artifact_path="models")
 
         if self.use_gpu:
             torch.cuda.empty_cache()
@@ -360,8 +395,8 @@ class data_loader(Dataset):
         return len(self.df_feature)
 
 
-def get_stock_loader(df, batch_size, shuffle=True):
-    train_loader = DataLoader(data_loader(df), batch_size=batch_size, shuffle=shuffle)
+def get_stock_loader(df, batch_size, shuffle=True, generator=None):
+    train_loader = DataLoader(data_loader(df), batch_size=batch_size, shuffle=shuffle, generator=generator)
     return train_loader
 
 

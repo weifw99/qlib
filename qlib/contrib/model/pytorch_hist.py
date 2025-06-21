@@ -127,6 +127,8 @@ class HIST(Model):
                 torch.mps.manual_seed(self.seed)
             if torch.cuda.is_available():
                 torch.cuda.manual_seed_all(self.seed)
+                torch.backends.cudnn.deterministic = True
+                torch.backends.cudnn.benchmark = False
 
         self.HIST_model = HISTModel(
             d_feat=self.d_feat,
@@ -251,6 +253,8 @@ class HIST(Model):
         evals_result=dict(),
         save_path=None,
     ):
+        save_path = save_path or self.kwargs.get("save_path", None) if self.kwargs else None
+        self.logger.info("fit params save_path:%s:", save_path)
         df_train, df_valid, df_test = dataset.prepare(
             ["train", "valid", "test"],
             col_set=["feature", "label"],

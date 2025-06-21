@@ -5,6 +5,8 @@
 from __future__ import division
 from __future__ import print_function
 
+import os
+
 import numpy as np
 import pandas as pd
 from typing import Text, Union
@@ -56,6 +58,7 @@ class ALSTM(Model):
         n_jobs=10,
         GPU=0,
         seed=None,
+        init_model_path=None,
         **kwargs,
     ):
         # Set logger.
@@ -94,7 +97,9 @@ class ALSTM(Model):
             "\ndevice : {}"
             "\nn_jobs : {}"
             "\nuse_GPU : {}"
-            "\nseed : {}".format(
+            "\nseed : {}"
+            "\ninit_model_path: {}"
+            "\nkwargs: {}".format(
                 d_feat,
                 hidden_size,
                 num_layers,
@@ -110,6 +115,8 @@ class ALSTM(Model):
                 n_jobs,
                 self.use_gpu,
                 seed,
+                init_model_path,
+                kwargs,
             )
         )
 
@@ -120,6 +127,8 @@ class ALSTM(Model):
                 torch.mps.manual_seed(self.seed)
             if torch.cuda.is_available():
                 torch.cuda.manual_seed_all(self.seed)
+                torch.backends.cudnn.deterministic = True
+                torch.backends.cudnn.benchmark = False
 
         self.ALSTM_model = ALSTMModel(
             d_feat=self.d_feat,
@@ -137,7 +146,14 @@ class ALSTM(Model):
         else:
             raise NotImplementedError("optimizer {} is not supported!".format(optimizer))
 
-        self.fitted = False
+        self.kwargs = kwargs
+        self.init_model_path = init_model_path
+        if init_model_path is not None and os.path.exists(init_model_path):
+            self.logger.info(f"Loading model weights from {init_model_path}")
+            self.ALSTM_model.load_state_dict(torch.load(init_model_path, map_location=self.device))
+            self.fitted = True
+        else:
+            self.fitted = False
         self.ALSTM_model.to(self.device)
 
     @property
@@ -224,6 +240,8 @@ class ALSTM(Model):
         save_path=None,
         reweighter=None,
     ):
+        save_path = save_path or self.kwargs.get("save_path", None) if self.kwargs else None
+        self.logger.info("fit params save_path:%s:", save_path)
         dl_train = dataset.prepare("train", col_set=["feature", "label"], data_key=DataHandlerLP.DK_L)
         dl_valid = dataset.prepare("valid", col_set=["feature", "label"], data_key=DataHandlerLP.DK_L)
         if dl_train.empty or dl_valid.empty:
@@ -247,6 +265,7 @@ class ALSTM(Model):
             shuffle=True,
             num_workers=self.n_jobs,
             drop_last=True,
+            generator = torch.Generator().manual_seed(self.seed) if self.seed is not None else None,
         )
         valid_loader = DataLoader(
             ConcatDataset(dl_valid, wl_valid),
@@ -256,7 +275,12 @@ class ALSTM(Model):
             drop_last=True,
         )
 
-        save_path = get_or_create_path(save_path)
+        save_path = get_or_create_path(save_path, return_dir=True)
+        model_save_dir = os.path.join(save_path, "model_ckpt")
+        os.makedirs(model_save_dir, exist_ok=True)
+        # 记录 artifact 到 MLflow
+        from qlib.workflow import R
+        recorder = R.get_recorder()
 
         stop_steps = 0
         train_loss = 0
@@ -280,8 +304,6 @@ class ALSTM(Model):
             evals_result["train"].append(train_score)
             evals_result["valid"].append(val_score)
             # ✅ 写入 logger（写入 MLflow）
-            from qlib.workflow import R
-            recorder = R.get_recorder()
             if recorder is not None:
                 log_m = {"train_loss": train_loss,
                          "val_loss": val_loss,
@@ -289,6 +311,12 @@ class ALSTM(Model):
                          "val_score": val_score
                          }
                 recorder.log_metrics(step=step, **log_m)
+
+            # 每轮保存模型
+            step_model_path = os.path.join(model_save_dir, f"model_{step}_params.pt")
+            torch.save(self.ALSTM_model.state_dict(), step_model_path)
+            if recorder is not None:
+                recorder.log_artifact(step_model_path, artifact_path="models")
 
             if val_score > best_score:
                 best_score = val_score
@@ -303,7 +331,11 @@ class ALSTM(Model):
 
         self.logger.info("best score: %.6lf @ %d" % (best_score, best_epoch))
         self.ALSTM_model.load_state_dict(best_param)
-        torch.save(best_param, save_path)
+        # 保存最优模型
+        best_model_path = os.path.join(model_save_dir, f"base_model_params.pt")
+        torch.save(best_param, best_model_path)
+        if recorder is not None:
+            recorder.log_artifact(best_model_path, artifact_path="models")
 
         if self.use_gpu:
             torch.cuda.empty_cache()

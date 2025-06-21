@@ -31,7 +31,7 @@ from torch.utils.data import Dataset
 
 def seed_everything(seed: int) -> None:
     torch.manual_seed(seed)
-    torch.cuda.manual_seed_all(self.seed)
+    torch.cuda.manual_seed_all(seed)
     np.random.seed(seed)
     random.seed(seed)
     torch.backends.cudnn.deterministic = True

@@ -5,6 +5,7 @@
 from __future__ import division
 from __future__ import print_function
 
+import os
 from typing import Union, Text
 
 import numpy as np
@@ -142,6 +143,8 @@ class GATs(Model):
                 torch.mps.manual_seed(self.seed)
             if torch.cuda.is_available():
                 torch.cuda.manual_seed_all(self.seed)
+                torch.backends.cudnn.deterministic = True
+                torch.backends.cudnn.benchmark = False
 
         self.GAT_model = GATModel(
             d_feat=self.d_feat,
@@ -259,7 +262,7 @@ class GATs(Model):
         sampler_train = DailyBatchSampler(dl_train)
         sampler_valid = DailyBatchSampler(dl_valid)
 
-        train_loader = DataLoader(dl_train, sampler=sampler_train, num_workers=self.n_jobs, drop_last=True)
+        train_loader = DataLoader(dl_train, sampler=sampler_train, num_workers=self.n_jobs, drop_last=True, generator = torch.Generator().manual_seed(self.seed) if self.seed is not None else None,)
         valid_loader = DataLoader(dl_valid, sampler=sampler_valid, num_workers=self.n_jobs, drop_last=True)
 
         save_path = get_or_create_path(save_path)
