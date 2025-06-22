@@ -434,7 +434,15 @@ class MLflowRecorder(Recorder):
                 data = unpickler(f).load()
             return data
         except Exception as e:
-            raise LoadObjectError(str(e)) from e
+            # If loading fails, handle exception and try to reload with a modified path
+            try:
+                # Try downloading the artifact again with the new path
+                path = f"{self.uri}/{self.experiment_id}/{self.id}/artifacts/{name}"  # Download from the new repo
+                with Path(path).open("rb") as f:
+                    data = unpickler(f).load()
+                return data
+            except Exception as e:
+                raise LoadObjectError(f"Failed to load object from new path: {e}") from e
         finally:
             ar = self.client._tracking_client._get_artifact_repo(self.id)
             if isinstance(ar, AzureBlobArtifactRepository) and path is not None:
