@@ -34,7 +34,7 @@ def get_or_create_path(path: Optional[Text] = None, return_dir: bool = False):
         if not os.path.exists(temp_dir):
             os.makedirs(temp_dir)
         if return_dir:
-            _, path = tempfile.mkdtemp(dir=temp_dir)
+            path = tempfile.mkdtemp(dir=temp_dir)
         else:
             _, path = tempfile.mkstemp(dir=temp_dir)
     return path
