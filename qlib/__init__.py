@@ -2,15 +2,19 @@
 # Licensed under the MIT License.
 from pathlib import Path
 
-__version__ = "0.9.6.99"
+from setuptools_scm import get_version
+
+__version__ = get_version(root="..", relative_to=__file__)
 __version__bak = __version__  # This version is backup for QlibConfig.reset_qlib_version
-import os
-import re
-from typing import Union
-from ruamel.yaml import YAML
 import logging
+import os
 import platform
+import re
 import subprocess
+from typing import Union
+
+from ruamel.yaml import YAML
+
 from .log import get_module_logger
 
 
@@ -136,7 +140,10 @@ def _mount_nfs_uri(provider_uri, mount_path, auto_mount: bool = False):
                     _command_log = [line for line in _command_log if _remote_uri in line]
                 if len(_command_log) > 0:
                     for _c in _command_log:
-                        _temp_mount = _c.decode("utf-8").split(" ")[2]
+                        if isinstance(_c, str):
+                            _temp_mount = _c.split(" ")[2]
+                        else:
+                            _temp_mount = _c.decode("utf-8").split(" ")[2]
                         _temp_mount = _temp_mount[:-1] if _temp_mount.endswith("/") else _temp_mount
                         if _temp_mount == _mount_path:
                             _is_mount = True

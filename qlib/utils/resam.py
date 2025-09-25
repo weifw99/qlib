@@ -109,7 +109,7 @@ def resam_ts_data(
     """
     Resample value from time-series data
 
-        - If `feature` has MultiIndex[instrument, datetime], apply the `method` to each instruemnt data with datetime in [start_time, end_time]
+        - If `feature` has MultiIndex[instrument, datetime], apply the `method` to each instrument data with datetime in [start_time, end_time]
             Example:
 
             .. code-block::
@@ -222,7 +222,7 @@ def get_valid_value(series, last=True):
     Nan | float
         the first/last valid value
     """
-    return series.fillna(method="ffill").iloc[-1] if last else series.fillna(method="bfill").iloc[0]
+    return series.ffill().iloc[-1] if last else series.bfill().iloc[0]
 
 
 def _ts_data_valid(ts_feature, last=False):
